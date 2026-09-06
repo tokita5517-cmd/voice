@@ -1,35 +1,174 @@
-<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>VoiceBloom v3</title>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>VoiceBloom v4</title>
 <style>
-body{margin:0;background:#f5f6fb;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;color:#202330}
-.wrap{max-width:900px;margin:auto;padding:14px 12px 60px}.card{background:#fff;border:1px solid #e5e8f0;border-radius:18px;padding:15px;margin:12px 0}
-button{border:0;border-radius:12px;padding:12px 14px;background:#6d5dfc;color:#fff;font-weight:700}button.gray{background:#eceef4;color:#333}button:disabled{opacity:.45}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.status{padding:10px 12px;border-radius:12px;background:#f0f1f6;font-size:13px}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.m{border:1px solid #e5e8f0;border-radius:13px;padding:10px}.m b{display:block;font-size:22px;margin-top:3px}
-canvas{width:100%;display:block;border-radius:12px;background:#ced8de}.meter{height:16px;background:#e8eaf1;border-radius:99px;overflow:hidden}.meter i{display:block;height:100%;width:0;background:#6d5dfc}
-.note{font-size:12px;color:#74798d}@media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)}}
-</style></head><body><div class='wrap'>
-<h1>VoiceBloom v3</h1><div class='note'>iPhone向け・マイク診断付き</div>
-<div class='card'><div id='status' class='status'>「マイク開始」を押してね。</div><div class='row' style='margin-top:10px'><button id='start'>🎙 マイク開始</button><button id='stop' class='gray' disabled>停止</button><label><input id='monitor' type='checkbox'> イヤホン返し</label></div></div>
-<div class='card'><h2>マイク入力チェック</h2><div class='meter'><i id='level'></i></div><div class='note' style='margin-top:6px'>声を出すとバーが動けばマイク入力は取れています。</div></div>
-<div class='card'><h2>リアルタイム・ピッチ</h2><canvas id='chart' width='900' height='520'></canvas>
-<div class='grid' style='margin-top:10px'><div class='m'>補正後ピッチ<b id='pitch'>—</b></div><div class='m'>生ピッチ<b id='raw'>—</b></div><div class='m'>音名<b id='note'>—</b></div><div class='m'>判定<b id='zone'>—</b></div></div>
-<div id='diag' class='status' style='margin-top:10px'>待機中</div></div></div>
+:root{--bg:#f5f6fb;--card:#fff;--ink:#202330;--muted:#74798d;--line:#e5e8f0;--accent:#6d5dfc}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;color:var(--ink)}
+.wrap{max-width:900px;margin:auto;padding:14px 12px 60px}.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:15px;margin:12px 0}
+h1{font-size:22px;margin:0}.note{font-size:12px;color:var(--muted);line-height:1.55}
+button{border:0;border-radius:12px;padding:12px 14px;background:var(--accent);color:#fff;font-weight:700}
+button.gray{background:#eceef4;color:#333}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.status{padding:10px 12px;border-radius:12px;background:#f0f1f6;font-size:13px;line-height:1.5}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.m{border:1px solid var(--line);border-radius:13px;padding:10px}.m b{display:block;font-size:22px;margin-top:3px}
+canvas{width:100%;display:block;border-radius:12px;background:#ced8de}.meter{height:16px;background:#e8eaf1;border-radius:99px;overflow:hidden}.meter i{display:block;height:100%;width:0;background:var(--accent)}
+@media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>VoiceBloom v4</h1>
+<div class="note">iPhone向け・イヤホン返し強化版</div>
+
+<div class="card">
+  <div id="status" class="status">①マイク開始 → ②イヤホン返し開始 の順で押してね。</div>
+  <div class="row" style="margin-top:10px">
+    <button id="startMic">🎙 マイク開始</button>
+    <button id="startMonitor">🎧 イヤホン返し開始</button>
+    <button id="stopMonitor" class="gray">返し停止</button>
+    <button id="stopMic" class="gray">マイク停止</button>
+  </div>
+  <div class="note" style="margin-top:8px">
+    iPhoneでは「チェックボックスでON」より、再生を独立したボタン操作にした方が音声再生が許可されやすいので方式を変更しました。
+  </div>
+</div>
+
+<div class="card">
+  <h2>マイク入力</h2>
+  <div class="meter"><i id="level"></i></div>
+  <div id="monitorStatus" class="status" style="margin-top:10px">イヤホン返し：停止中</div>
+</div>
+
+<div class="card">
+  <h2>リアルタイム・ピッチ</h2>
+  <canvas id="chart" width="900" height="520"></canvas>
+  <div class="grid" style="margin-top:10px">
+    <div class="m">補正後ピッチ<b id="pitch">—</b></div>
+    <div class="m">生ピッチ<b id="raw">—</b></div>
+    <div class="m">音名<b id="note">—</b></div>
+    <div class="m">判定<b id="zone">—</b></div>
+  </div>
+  <div id="diag" class="status" style="margin-top:10px">待機中</div>
+</div>
+
+<!-- iPhone/Safariで local MediaStream を直接再生するための音声要素 -->
+<audio id="monitorAudio" playsinline autoplay></audio>
+
 <script>
-const $=id=>document.getElementById(id);let stream,ac,src,analyser,gain,raf,recent=[],hist=[],lastPitch=0;
-function median(a){if(!a.length)return 0;let b=[...a].sort((x,y)=>x-y);return b[Math.floor(b.length/2)]}
-function noteName(f){if(!f)return'—';let n=Math.round(12*Math.log2(f/440)+69),names=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];return names[(n%12+12)%12]+(Math.floor(n/12)-1)}
-function zone(f){return f<85?'低域':f<145?'男性域':f<175?'中間域':f<275?'女性会話域':'高めの女性域'}
-function detect(buf,sr){let rms=0;for(let x of buf)rms+=x*x;rms=Math.sqrt(rms/buf.length);if(rms<.006)return{pitch:0,rms};
-let min=Math.floor(sr/500),max=Math.floor(sr/60),bestLag=0,best=0;
-for(let lag=min;lag<=max;lag+=2){let num=0,d1=0,d2=0;for(let i=0;i<buf.length-lag;i+=2){let a=buf[i],b=buf[i+lag];num+=a*b;d1+=a*a;d2+=b*b}let c=num/Math.sqrt((d1||1)*(d2||1));if(c>best){best=c;bestLag=lag}}
-return{pitch:best>.25&&bestLag?sr/bestLag:0,rms}}
-function correct(raw){if(!raw)return 0;if(!lastPitch){lastPitch=raw;recent=[raw];return raw}let cs=[raw,raw*2,raw/2,raw*3,raw/3].filter(x=>x>=60&&x<=500),best=cs[0],score=1e9;for(let c of cs){let s=Math.abs(Math.log2(c/lastPitch));if(s<score){score=s;best=c}}recent.push(best);if(recent.length>5)recent.shift();let out=median(recent.slice(-3));lastPitch=out;return out}
-function draw(){let cv=$('chart'),g=cv.getContext('2d'),W=cv.width,H=cv.height,min=50,max=450,y=f=>H-(f-min)/(max-min)*H;g.clearRect(0,0,W,H);
-g.fillStyle='#aed8e7';g.fillRect(0,y(145),W,y(85)-y(145));g.fillStyle='#d4d4d4';g.fillRect(0,y(175),W,y(145)-y(175));g.fillStyle='#f3a5b3';g.fillRect(0,y(275),W,y(175)-y(275));
-g.strokeStyle='#8ca0aa';g.fillStyle='#111';g.font='15px sans-serif';for(let f=50;f<=450;f+=50){let yy=y(f);g.beginPath();g.moveTo(0,yy);g.lineTo(W,yy);g.stroke();g.fillText(f+' Hz',8,yy-4)}
-let a=hist.slice(-120);if(a.length>1){g.strokeStyle='red';g.lineWidth=4;g.beginPath();a.forEach((v,i)=>{let xx=i/119*W,yy=y(v);i?g.lineTo(xx,yy):g.moveTo(xx,yy)});g.stroke()}}
-function loop(){let buf=new Float32Array(analyser.fftSize);analyser.getFloatTimeDomainData(buf);let d=detect(buf,ac.sampleRate);$('level').style.width=Math.min(100,d.rms*900)+'%';
-if(d.pitch){let raw=d.pitch,fixed=correct(raw);$('raw').textContent=Math.round(raw)+' Hz';$('pitch').textContent=Math.round(fixed)+' Hz';$('note').textContent=noteName(fixed);$('zone').textContent=zone(fixed);$('diag').textContent=Math.abs(raw-fixed)>18?'🔧 補正 '+Math.round(raw)+' → '+Math.round(fixed)+' Hz':'✅ ピッチ検出中';hist.push(fixed);if(hist.length>240)hist.shift()}else{$('diag').textContent=d.rms>.006?'声は入っています。ピッチ解析中…':'マイク入力待ち…'}draw();raf=requestAnimationFrame(loop)}
-async function start(){try{$('status').textContent='マイク許可を確認中…';stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});ac=new(window.AudioContext||window.webkitAudioContext)();await ac.resume();src=ac.createMediaStreamSource(stream);analyser=ac.createAnalyser();analyser.fftSize=1024;analyser.smoothingTimeConstant=0;gain=ac.createGain();gain.gain.value=0;src.connect(analyser);src.connect(gain);gain.connect(ac.destination);recent=[];hist=[];lastPitch=0;$('status').textContent='✅ マイク接続済み。声を出してみてね。';$('start').disabled=true;$('stop').disabled=false;loop()}catch(e){$('status').textContent='⚠️ マイク開始失敗: '+(e.name||'error')}}
-$('start').onclick=start;$('stop').onclick=()=>{if(raf)cancelAnimationFrame(raf);if(stream)stream.getTracks().forEach(t=>t.stop());if(ac)ac.close();$('status').textContent='停止しました。';$('start').disabled=false;$('stop').disabled=true};$('monitor').onchange=e=>{if(gain)gain.gain.value=e.target.checked?.7:0};
-</script></body></html>
+const $=id=>document.getElementById(id);
+let stream=null, ac=null, src=null, analyser=null, raf=null;
+let fallbackGain=null, recent=[], hist=[], lastPitch=0;
+
+function median(a){if(!a.length)return 0;const b=[...a].sort((x,y)=>x-y);return b[Math.floor(b.length/2)]}
+function noteName(f){if(!f)return "—";const n=Math.round(12*Math.log2(f/440)+69),names=["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"];return names[(n%12+12)%12]+(Math.floor(n/12)-1)}
+function zone(f){return f<85?"低域":f<145?"男性域":f<175?"中間域":f<275?"女性会話域":"高めの女性域"}
+
+function detect(buf,sr){
+  let rms=0; for(const x of buf)rms+=x*x; rms=Math.sqrt(rms/buf.length);
+  if(rms<.006)return {pitch:0,rms};
+  const min=Math.floor(sr/500),max=Math.floor(sr/60);
+  let bestLag=0,best=0;
+  for(let lag=min;lag<=max;lag+=2){
+    let num=0,d1=0,d2=0;
+    for(let i=0;i<buf.length-lag;i+=2){const a=buf[i],b=buf[i+lag];num+=a*b;d1+=a*a;d2+=b*b}
+    const c=num/Math.sqrt((d1||1)*(d2||1));
+    if(c>best){best=c;bestLag=lag}
+  }
+  return {pitch:best>.25&&bestLag?sr/bestLag:0,rms};
+}
+function correct(raw){
+  if(!raw)return 0;
+  if(!lastPitch){lastPitch=raw;recent=[raw];return raw}
+  const cs=[raw,raw*2,raw/2,raw*3,raw/3].filter(x=>x>=60&&x<=500);
+  let best=cs[0],score=1e9;
+  for(const c of cs){const s=Math.abs(Math.log2(c/lastPitch));if(s<score){score=s;best=c}}
+  recent.push(best);if(recent.length>5)recent.shift();
+  const out=median(recent.slice(-3));lastPitch=out;return out;
+}
+function draw(){
+  const cv=$("chart"),g=cv.getContext("2d"),W=cv.width,H=cv.height,min=50,max=450,y=f=>H-(f-min)/(max-min)*H;
+  g.clearRect(0,0,W,H);
+  g.fillStyle="#aed8e7";g.fillRect(0,y(145),W,y(85)-y(145));
+  g.fillStyle="#d4d4d4";g.fillRect(0,y(175),W,y(145)-y(175));
+  g.fillStyle="#f3a5b3";g.fillRect(0,y(275),W,y(175)-y(275));
+  g.strokeStyle="#8ca0aa";g.fillStyle="#111";g.font="15px sans-serif";
+  for(let f=50;f<=450;f+=50){const yy=y(f);g.beginPath();g.moveTo(0,yy);g.lineTo(W,yy);g.stroke();g.fillText(f+" Hz",8,yy-4)}
+  const a=hist.slice(-120);
+  if(a.length>1){g.strokeStyle="red";g.lineWidth=4;g.beginPath();a.forEach((v,i)=>{const xx=i/119*W,yy=y(v);i?g.lineTo(xx,yy):g.moveTo(xx,yy)});g.stroke()}
+}
+function loop(){
+  if(!analyser)return;
+  const buf=new Float32Array(analyser.fftSize);analyser.getFloatTimeDomainData(buf);
+  const d=detect(buf,ac.sampleRate);$("level").style.width=Math.min(100,d.rms*900)+"%";
+  if(d.pitch){
+    const raw=d.pitch,fixed=correct(raw);
+    $("raw").textContent=Math.round(raw)+" Hz";$("pitch").textContent=Math.round(fixed)+" Hz";
+    $("note").textContent=noteName(fixed);$("zone").textContent=zone(fixed);
+    $("diag").textContent=Math.abs(raw-fixed)>18?"🔧 補正 "+Math.round(raw)+" → "+Math.round(fixed)+" Hz":"✅ ピッチ検出中";
+    hist.push(fixed);if(hist.length>240)hist.shift();
+  }else $("diag").textContent=d.rms>.006?"声は入っています。ピッチ解析中…":"マイク入力待ち…";
+  draw();raf=requestAnimationFrame(loop);
+}
+
+async function startMic(){
+  try{
+    $("status").textContent="マイク許可を確認中…";
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    ac=new (window.AudioContext||window.webkitAudioContext)();await ac.resume();
+    src=ac.createMediaStreamSource(stream);analyser=ac.createAnalyser();analyser.fftSize=1024;analyser.smoothingTimeConstant=0;src.connect(analyser);
+    // fallback WebAudio path, initially muted
+    fallbackGain=ac.createGain();fallbackGain.gain.value=0;src.connect(fallbackGain);fallbackGain.connect(ac.destination);
+    recent=[];hist=[];lastPitch=0;
+    $("status").textContent="✅ マイク接続済み。次に「イヤホン返し開始」を押してね。";
+    loop();
+  }catch(e){$("status").textContent="⚠️ マイク開始失敗: "+(e.name||"error")}
+}
+
+async function startMonitor(){
+  if(!stream){$("monitorStatus").textContent="先に「マイク開始」を押してね。";return}
+  const audio=$("monitorAudio");
+  try{
+    // Primary path: HTMLMediaElement direct local stream playback
+    audio.srcObject=stream;
+    audio.muted=false;
+    audio.volume=1.0;
+    await audio.play();
+    if(fallbackGain)fallbackGain.gain.value=0;
+    $("monitorStatus").textContent="✅ イヤホン返し：ON（MediaStream直接再生）";
+  }catch(e){
+    // Fallback path: Web Audio
+    try{
+      if(ac.state==="suspended")await ac.resume();
+      if(fallbackGain)fallbackGain.gain.value=0.9;
+      $("monitorStatus").textContent="✅ イヤホン返し：ON（WebAudio方式）";
+    }catch(e2){
+      $("monitorStatus").textContent="⚠️ 返し開始失敗: "+(e2.name||e.name||"error");
+    }
+  }
+}
+
+function stopMonitor(){
+  const audio=$("monitorAudio");
+  audio.pause();audio.srcObject=null;
+  if(fallbackGain)fallbackGain.gain.value=0;
+  $("monitorStatus").textContent="イヤホン返し：停止中";
+}
+
+function stopMic(){
+  stopMonitor();
+  if(raf)cancelAnimationFrame(raf);
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  if(ac)ac.close();
+  stream=ac=src=analyser=fallbackGain=null;
+  $("status").textContent="停止しました。";
+}
+
+$("startMic").onclick=startMic;
+$("startMonitor").onclick=startMonitor;
+$("stopMonitor").onclick=stopMonitor;
+$("stopMic").onclick=stopMic;
+</script>
+</body></html>
