@@ -3,91 +3,156 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>VoiceBloom v4</title>
+<title>VoiceBloom v5</title>
 <style>
-:root{--bg:#f5f6fb;--card:#fff;--ink:#202330;--muted:#74798d;--line:#e5e8f0;--accent:#6d5dfc}
+:root{--bg:#f5f6fb;--card:#fff;--ink:#202330;--muted:#74798d;--line:#e5e8f0;--accent:#6d5dfc;--soft:#efedff}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;color:var(--ink)}
-.wrap{max-width:900px;margin:auto;padding:14px 12px 60px}.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:15px;margin:12px 0}
-h1{font-size:22px;margin:0}.note{font-size:12px;color:var(--muted);line-height:1.55}
+.wrap{max-width:920px;margin:auto;padding:14px 12px 70px}
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:15px;margin:12px 0}
+h1{font-size:22px;margin:0} h2{font-size:18px;margin:0 0 10px}
+.note{font-size:12px;color:var(--muted);line-height:1.6}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 button{border:0;border-radius:12px;padding:12px 14px;background:var(--accent);color:#fff;font-weight:700}
-button.gray{background:#eceef4;color:#333}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button.gray{background:#eceef4;color:#333}
 .status{padding:10px 12px;border-radius:12px;background:#f0f1f6;font-size:13px;line-height:1.5}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.m{border:1px solid var(--line);border-radius:13px;padding:10px}.m b{display:block;font-size:22px;margin-top:3px}
-canvas{width:100%;display:block;border-radius:12px;background:#ced8de}.meter{height:16px;background:#e8eaf1;border-radius:99px;overflow:hidden}.meter i{display:block;height:100%;width:0;background:var(--accent)}
-@media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)}}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
+.m{border:1px solid var(--line);border-radius:13px;padding:10px}
+.m b{display:block;font-size:22px;margin-top:3px}
+canvas{width:100%;display:block;border-radius:12px;background:#ced8de}
+.meter{height:16px;background:#e8eaf1;border-radius:99px;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:var(--accent);transition:width .08s linear}
+.badge{display:inline-block;padding:5px 9px;border-radius:99px;background:var(--soft);color:#453bb0;font-size:12px}
+@media(min-width:760px){.grid{grid-template-columns:repeat(4,1fr)}}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>VoiceBloom v4</h1>
-<div class="note">iPhone向け・イヤホン返し強化版</div>
+  <h1>VoiceBloom v5 <span class="badge">安定化版</span></h1>
+  <div class="note">長時間使用でメーターが止まりにくいよう、解析ループを軽量化・監視付きに変更。</div>
 
-<div class="card">
-  <div id="status" class="status">①マイク開始 → ②イヤホン返し開始 の順で押してね。</div>
-  <div class="row" style="margin-top:10px">
-    <button id="startMic">🎙 マイク開始</button>
-    <button id="startMonitor">🎧 イヤホン返し開始</button>
-    <button id="stopMonitor" class="gray">返し停止</button>
-    <button id="stopMic" class="gray">マイク停止</button>
+  <div class="card">
+    <div id="status" class="status">①マイク開始 → ②イヤホン返し開始</div>
+    <div class="row" style="margin-top:10px">
+      <button id="startMic">🎙 マイク開始</button>
+      <button id="startMonitor">🎧 イヤホン返し開始</button>
+      <button id="stopMonitor" class="gray">返し停止</button>
+      <button id="stopMic" class="gray">マイク停止</button>
+    </div>
   </div>
-  <div class="note" style="margin-top:8px">
-    iPhoneでは「チェックボックスでON」より、再生を独立したボタン操作にした方が音声再生が許可されやすいので方式を変更しました。
+
+  <div class="card">
+    <h2>入力レベル</h2>
+    <div class="meter"><i id="level"></i></div>
+    <div id="health" class="status" style="margin-top:10px">解析待機中</div>
   </div>
-</div>
 
-<div class="card">
-  <h2>マイク入力</h2>
-  <div class="meter"><i id="level"></i></div>
-  <div id="monitorStatus" class="status" style="margin-top:10px">イヤホン返し：停止中</div>
-</div>
-
-<div class="card">
-  <h2>リアルタイム・ピッチ</h2>
-  <canvas id="chart" width="900" height="520"></canvas>
-  <div class="grid" style="margin-top:10px">
-    <div class="m">補正後ピッチ<b id="pitch">—</b></div>
-    <div class="m">生ピッチ<b id="raw">—</b></div>
-    <div class="m">音名<b id="note">—</b></div>
-    <div class="m">判定<b id="zone">—</b></div>
+  <div class="card">
+    <h2>リアルタイム分析</h2>
+    <canvas id="chart" width="900" height="500"></canvas>
+    <div class="grid" style="margin-top:10px">
+      <div class="m">補正後ピッチ<b id="pitch">—</b></div>
+      <div class="m">生ピッチ<b id="raw">—</b></div>
+      <div class="m">発声タイプ推定<b id="register">—</b></div>
+      <div class="m">息漏れ推定<b id="breath">—</b></div>
+    </div>
+    <div class="grid" style="margin-top:9px">
+      <div class="m">音名<b id="note">—</b></div>
+      <div class="m">高さ帯<b id="zone">—</b></div>
+      <div class="m">明るさ<b id="bright">—</b></div>
+      <div class="m">安定度<b id="stability">—</b></div>
+    </div>
+    <div id="diag" class="status" style="margin-top:10px">待機中</div>
+    <div class="note" style="margin-top:8px">
+      「地声・中間・裏声」「息漏れ」は音響特徴からの簡易推定。医学的・絶対的な判定ではなく、練習時の比較用です。
+    </div>
   </div>
-  <div id="diag" class="status" style="margin-top:10px">待機中</div>
-</div>
 
-<!-- iPhone/Safariで local MediaStream を直接再生するための音声要素 -->
-<audio id="monitorAudio" playsinline autoplay></audio>
+  <audio id="monitorAudio" playsinline></audio>
+</div>
 
 <script>
 const $=id=>document.getElementById(id);
-let stream=null, ac=null, src=null, analyser=null, raf=null;
-let fallbackGain=null, recent=[], hist=[], lastPitch=0;
+let stream=null, ac=null, src=null, analyser=null, fallbackGain=null;
+let timer=null, watchdog=null, recent=[], hist=[], lastPitch=0, lastTick=0;
+let lastGoodFeatures={breath:0, bright:0, stability:0};
 
 function median(a){if(!a.length)return 0;const b=[...a].sort((x,y)=>x-y);return b[Math.floor(b.length/2)]}
-function noteName(f){if(!f)return "—";const n=Math.round(12*Math.log2(f/440)+69),names=["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"];return names[(n%12+12)%12]+(Math.floor(n/12)-1)}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function noteName(f){
+  if(!f)return "—";
+  const n=Math.round(12*Math.log2(f/440)+69),names=["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"];
+  return names[(n%12+12)%12]+(Math.floor(n/12)-1)
+}
 function zone(f){return f<85?"低域":f<145?"男性域":f<175?"中間域":f<275?"女性会話域":"高めの女性域"}
 
-function detect(buf,sr){
+function detectPitch(buf,sr){
   let rms=0; for(const x of buf)rms+=x*x; rms=Math.sqrt(rms/buf.length);
-  if(rms<.006)return {pitch:0,rms};
-  const min=Math.floor(sr/500),max=Math.floor(sr/60);
+  if(rms<.005)return {pitch:0,rms,corr:0};
+  const minLag=Math.floor(sr/500),maxLag=Math.floor(sr/60);
   let bestLag=0,best=0;
-  for(let lag=min;lag<=max;lag+=2){
+  for(let lag=minLag;lag<=maxLag;lag+=3){
     let num=0,d1=0,d2=0;
-    for(let i=0;i<buf.length-lag;i+=2){const a=buf[i],b=buf[i+lag];num+=a*b;d1+=a*a;d2+=b*b}
+    for(let i=0;i<buf.length-lag;i+=3){
+      const a=buf[i],b=buf[i+lag];num+=a*b;d1+=a*a;d2+=b*b;
+    }
     const c=num/Math.sqrt((d1||1)*(d2||1));
     if(c>best){best=c;bestLag=lag}
   }
-  return {pitch:best>.25&&bestLag?sr/bestLag:0,rms};
+  return {pitch:best>.22&&bestLag?sr/bestLag:0,rms,corr:best};
 }
-function correct(raw){
+
+function correctOctave(raw){
   if(!raw)return 0;
   if(!lastPitch){lastPitch=raw;recent=[raw];return raw}
   const cs=[raw,raw*2,raw/2,raw*3,raw/3].filter(x=>x>=60&&x<=500);
   let best=cs[0],score=1e9;
-  for(const c of cs){const s=Math.abs(Math.log2(c/lastPitch));if(s<score){score=s;best=c}}
-  recent.push(best);if(recent.length>5)recent.shift();
-  const out=median(recent.slice(-3));lastPitch=out;return out;
+  for(const c of cs){
+    const s=Math.abs(Math.log2(c/lastPitch));
+    if(s<score){score=s;best=c}
+  }
+  recent.push(best); if(recent.length>5)recent.shift();
+  const out=median(recent.slice(-3)); lastPitch=out; return out;
 }
+
+function spectralFeatures(){
+  const n=analyser.frequencyBinCount;
+  const bins=new Uint8Array(n); analyser.getByteFrequencyData(bins);
+  let sum=0,weighted=0,high=0,mid=0,logSum=0,count=0;
+  for(let i=1;i<n;i++){
+    const a=bins[i]/255, f=i*ac.sampleRate/(2*n);
+    sum+=a; weighted+=a*f;
+    if(f>3500&&f<9000)high+=a;
+    if(f>300&&f<3000)mid+=a;
+    if(a>0.0001){logSum+=Math.log(a);count++}
+  }
+  const centroid=sum?weighted/sum:0;
+  const arithmetic=count?sum/(n-1):0;
+  const geometric=count?Math.exp(logSum/count):0;
+  const flatness=arithmetic?geometric/arithmetic:0;
+  const noiseRatio=(high+mid)?high/(high+mid):0;
+
+  // Heuristic breathiness proxy: broadband noise + spectral flatness.
+  const breath=clamp((noiseRatio*130 + flatness*85),0,100);
+  const bright=clamp((centroid-700)/22,0,100);
+  return {breath,bright,centroid,flatness};
+}
+
+function classifyRegister(f,corr,breath,bright,stability){
+  // Relative acoustic heuristic only. Uses pitch + harmonicity + breathiness + brightness.
+  let head=0,chest=0;
+  if(f>=220)head+=35; else if(f>=180)head+=20; else chest+=18;
+  if(breath>=50)head+=26; else chest+=12;
+  if(corr<0.55)head+=18; else chest+=18;
+  if(bright>=55)head+=12;
+  if(stability>=65)chest+=8;
+
+  const diff=head-chest;
+  if(diff>=24)return "裏声寄り";
+  if(diff<=-18)return "地声寄り";
+  return "中間 / ミックス";
+}
+
 function draw(){
   const cv=$("chart"),g=cv.getContext("2d"),W=cv.width,H=cv.height,min=50,max=450,y=f=>H-(f-min)/(max-min)*H;
   g.clearRect(0,0,W,H);
@@ -97,78 +162,151 @@ function draw(){
   g.strokeStyle="#8ca0aa";g.fillStyle="#111";g.font="15px sans-serif";
   for(let f=50;f<=450;f+=50){const yy=y(f);g.beginPath();g.moveTo(0,yy);g.lineTo(W,yy);g.stroke();g.fillText(f+" Hz",8,yy-4)}
   const a=hist.slice(-120);
-  if(a.length>1){g.strokeStyle="red";g.lineWidth=4;g.beginPath();a.forEach((v,i)=>{const xx=i/119*W,yy=y(v);i?g.lineTo(xx,yy):g.moveTo(xx,yy)});g.stroke()}
+  if(a.length>1){
+    g.strokeStyle="red";g.lineWidth=4;g.beginPath();
+    a.forEach((v,i)=>{const xx=i/119*W,yy=y(v);i?g.lineTo(xx,yy):g.moveTo(xx,yy)});g.stroke();
+  }
 }
-function loop(){
-  if(!analyser)return;
-  const buf=new Float32Array(analyser.fftSize);analyser.getFloatTimeDomainData(buf);
-  const d=detect(buf,ac.sampleRate);$("level").style.width=Math.min(100,d.rms*900)+"%";
-  if(d.pitch){
-    const raw=d.pitch,fixed=correct(raw);
-    $("raw").textContent=Math.round(raw)+" Hz";$("pitch").textContent=Math.round(fixed)+" Hz";
-    $("note").textContent=noteName(fixed);$("zone").textContent=zone(fixed);
-    $("diag").textContent=Math.abs(raw-fixed)>18?"🔧 補正 "+Math.round(raw)+" → "+Math.round(fixed)+" Hz":"✅ ピッチ検出中";
-    hist.push(fixed);if(hist.length>240)hist.shift();
-  }else $("diag").textContent=d.rms>.006?"声は入っています。ピッチ解析中…":"マイク入力待ち…";
-  draw();raf=requestAnimationFrame(loop);
+
+function processFrame(){
+  try{
+    if(!analyser || !ac)return;
+    lastTick=Date.now();
+    const buf=new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(buf);
+    const d=detectPitch(buf,ac.sampleRate);
+    $("level").style.width=clamp(d.rms*1000,0,100)+"%";
+
+    const sp=spectralFeatures();
+    let fixed=0, stability=lastGoodFeatures.stability;
+
+    if(d.pitch){
+      fixed=correctOctave(d.pitch);
+      hist.push(fixed); if(hist.length>220)hist.shift();
+
+      const recentP=hist.slice(-8);
+      if(recentP.length>=3){
+        const m=recentP.reduce((a,b)=>a+b,0)/recentP.length;
+        const sd=Math.sqrt(recentP.reduce((s,x)=>s+(x-m)*(x-m),0)/recentP.length);
+        stability=clamp(100-sd*1.6,0,100);
+      }
+
+      const reg=classifyRegister(fixed,d.corr,sp.breath,sp.bright,stability);
+      $("raw").textContent=Math.round(d.pitch)+" Hz";
+      $("pitch").textContent=Math.round(fixed)+" Hz";
+      $("note").textContent=noteName(fixed);
+      $("zone").textContent=zone(fixed);
+      $("register").textContent=reg;
+      $("diag").textContent=Math.abs(d.pitch-fixed)>18
+        ?"🔧 オクターブ補正 "+Math.round(d.pitch)+" → "+Math.round(fixed)+" Hz"
+        :"✅ 解析中";
+    }else{
+      $("diag").textContent=d.rms>.005?"声は入っています。ピッチ解析中…":"マイク入力待ち…";
+    }
+
+    $("breath").textContent=Math.round(sp.breath)+"%";
+    $("bright").textContent=Math.round(sp.bright)+"%";
+    $("stability").textContent=Math.round(stability)+"%";
+    lastGoodFeatures={breath:sp.breath,bright:sp.bright,stability};
+    draw();
+  }catch(err){
+    $("health").textContent="解析を自動復旧中…";
+  }
+}
+
+function startAnalysis(){
+  stopAnalysis();
+  // 20 fps. requestAnimationFrameよりiPhoneで長時間安定しやすく、CPU負荷も低い。
+  timer=setInterval(processFrame,50);
+  lastTick=Date.now();
+  watchdog=setInterval(async()=>{
+    if(!ac || !stream)return;
+    if(ac.state==="suspended"){
+      try{await ac.resume()}catch(e){}
+    }
+    // If analysis loop stalled for >2 sec, restart timer.
+    if(Date.now()-lastTick>2000){
+      if(timer)clearInterval(timer);
+      timer=setInterval(processFrame,50);
+      $("health").textContent="✅ 解析ループを自動復旧しました";
+    }else{
+      $("health").textContent="✅ 解析エンジン正常";
+    }
+  },1000);
+}
+function stopAnalysis(){
+  if(timer){clearInterval(timer);timer=null}
+  if(watchdog){clearInterval(watchdog);watchdog=null}
 }
 
 async function startMic(){
   try{
     $("status").textContent="マイク許可を確認中…";
     stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-    ac=new (window.AudioContext||window.webkitAudioContext)();await ac.resume();
-    src=ac.createMediaStreamSource(stream);analyser=ac.createAnalyser();analyser.fftSize=1024;analyser.smoothingTimeConstant=0;src.connect(analyser);
-    // fallback WebAudio path, initially muted
-    fallbackGain=ac.createGain();fallbackGain.gain.value=0;src.connect(fallbackGain);fallbackGain.connect(ac.destination);
-    recent=[];hist=[];lastPitch=0;
-    $("status").textContent="✅ マイク接続済み。次に「イヤホン返し開始」を押してね。";
-    loop();
-  }catch(e){$("status").textContent="⚠️ マイク開始失敗: "+(e.name||"error")}
-}
+    ac=new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
+    await ac.resume();
+    src=ac.createMediaStreamSource(stream);
+    analyser=ac.createAnalyser();
+    analyser.fftSize=1024;
+    analyser.smoothingTimeConstant=0;
+    src.connect(analyser);
 
-async function startMonitor(){
-  if(!stream){$("monitorStatus").textContent="先に「マイク開始」を押してね。";return}
-  const audio=$("monitorAudio");
-  try{
-    // Primary path: HTMLMediaElement direct local stream playback
-    audio.srcObject=stream;
-    audio.muted=false;
-    audio.volume=1.0;
-    await audio.play();
-    if(fallbackGain)fallbackGain.gain.value=0;
-    $("monitorStatus").textContent="✅ イヤホン返し：ON（MediaStream直接再生）";
+    fallbackGain=ac.createGain();fallbackGain.gain.value=0;
+    src.connect(fallbackGain);fallbackGain.connect(ac.destination);
+
+    recent=[];hist=[];lastPitch=0;
+    $("status").textContent="✅ マイク接続済み。次にイヤホン返し開始を押してね。";
+    startAnalysis();
   }catch(e){
-    // Fallback path: Web Audio
-    try{
-      if(ac.state==="suspended")await ac.resume();
-      if(fallbackGain)fallbackGain.gain.value=0.9;
-      $("monitorStatus").textContent="✅ イヤホン返し：ON（WebAudio方式）";
-    }catch(e2){
-      $("monitorStatus").textContent="⚠️ 返し開始失敗: "+(e2.name||e.name||"error");
-    }
+    $("status").textContent="⚠️ マイク開始失敗: "+(e.name||"error");
   }
 }
 
-function stopMonitor(){
+async function startMonitor(){
+  if(!stream){$("status").textContent="先にマイク開始を押してね。";return}
   const audio=$("monitorAudio");
-  audio.pause();audio.srcObject=null;
-  if(fallbackGain)fallbackGain.gain.value=0;
-  $("monitorStatus").textContent="イヤホン返し：停止中";
+  try{
+    audio.srcObject=stream;audio.muted=false;audio.volume=1;
+    await audio.play();
+    if(fallbackGain)fallbackGain.gain.value=0;
+    $("status").textContent="✅ イヤホン返しON";
+  }catch(e){
+    try{
+      if(ac.state==="suspended")await ac.resume();
+      fallbackGain.gain.value=.9;
+      $("status").textContent="✅ イヤホン返しON（代替方式）";
+    }catch(e2){
+      $("status").textContent="⚠️ イヤホン返し失敗";
+    }
+  }
 }
-
+function stopMonitor(){
+  const a=$("monitorAudio");a.pause();a.srcObject=null;
+  if(fallbackGain)fallbackGain.gain.value=0;
+  $("status").textContent="イヤホン返し停止";
+}
 function stopMic(){
-  stopMonitor();
-  if(raf)cancelAnimationFrame(raf);
+  stopMonitor();stopAnalysis();
   if(stream)stream.getTracks().forEach(t=>t.stop());
   if(ac)ac.close();
   stream=ac=src=analyser=fallbackGain=null;
   $("status").textContent="停止しました。";
+  $("health").textContent="解析停止";
 }
+
+// Safari may suspend AudioContext after route changes / interruptions.
+// Resume on visibility/focus/user touch.
+async function resumeAudio(){
+  if(ac && ac.state==="suspended"){try{await ac.resume()}catch(e){}}
+}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)resumeAudio()});
+window.addEventListener("focus",resumeAudio);
+document.addEventListener("touchstart",resumeAudio,{passive:true});
 
 $("startMic").onclick=startMic;
 $("startMonitor").onclick=startMonitor;
 $("stopMonitor").onclick=stopMonitor;
 $("stopMic").onclick=stopMic;
 </script>
-</body></html>
+</body>
+</html>
