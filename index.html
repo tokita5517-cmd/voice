@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>VoiceBloom v2</title>
+<style>
+:root{--bg:#f5f6fb;--card:#fff;--ink:#1f2230;--muted:#71758a;--line:#e6e8f0;--accent:#6d5dfc;--soft:#efedff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;color:var(--ink)}
+.wrap{max-width:920px;margin:auto;padding:14px 12px 70px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+h1{font-size:22px;margin:0}.sub{font-size:12px;color:var(--muted)}
+.card{background:white;border:1px solid var(--line);border-radius:18px;padding:15px;margin:12px 0}
+button{border:0;border-radius:12px;padding:11px 14px;background:var(--accent);color:white;font-weight:700}
+button.gray{background:#eceef4;color:#333}button:disabled{opacity:.45}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.status{padding:9px 11px;border-radius:11px;background:#f0f1f6;font-size:13px;line-height:1.5}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
+.metric{border:1px solid var(--line);border-radius:13px;padding:10px}
+.metric b{display:block;font-size:21px;margin-top:3px}
+.note{font-size:12px;color:var(--muted);line-height:1.6}
+canvas{width:100%;background:#cfd9df;border-radius:12px;display:block}
+label{font-size:13px;color:var(--muted)}
+input[type=range]{width:190px}
+.badge{font-size:12px;border-radius:999px;padding:6px 9px;background:var(--soft);color:#4136aa}
+@media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><div><h1>VoiceBloom v2</h1><div class="sub">ピッチ誤検出補正版</div></div><span class="badge">試作</span></header>
+
+<div class="card">
+  <div id="env" class="status">環境確認中…</div>
+  <div class="note" style="margin-top:7px">iPhoneではSafari + HTTPSで使ってね。ChatGPT内プレビューだとマイクが使えない場合があります。</div>
+</div>
+
+<div class="card">
+  <h2>リアルタイム・ピッチ</h2>
+  <div class="row">
+    <button id="start">🎙 マイク開始</button>
+    <button id="stop" class="gray" disabled>停止</button>
+    <label><input type="checkbox" id="monitor"> イヤホン返し</label>
+  </div>
+  <div style="margin-top:10px">
+    <label>表示上限 <span id="maxHzLabel">450</span> Hz
+      <input id="maxHz" type="range" min="300" max="600" step="10" value="450">
+    </label>
+  </div>
+  <canvas id="chart" width="900" height="520"></canvas>
+  <div class="grid" style="margin-top:10px">
+    <div class="metric">補正後ピッチ<b id="pitch">—</b></div>
+    <div class="metric">生ピッチ<b id="rawPitch">—</b></div>
+    <div class="metric">音名<b id="note">—</b></div>
+    <div class="metric">判定<b id="zone">—</b></div>
+  </div>
+  <div class="status" id="fixInfo" style="margin-top:10px">オクターブ誤検出を自動補正します。</div>
+</div>
+
+<div class="card">
+  <h2>今回追加した補正</h2>
+  <div class="note">
+    ・300 Hz前後の声が突然70〜90 Hzへ落ちるような値を、そのまま採用しない<br>
+    ・直前の安定ピッチに対して 1/2・2倍・1/3・3倍の候補を比較<br>
+    ・前後の連続性が最も自然な値へ補正<br>
+    ・瞬間的な外れ値は中央値フィルタで平滑化<br>
+    ・生の検出値も別表示するので、補正が入ったか確認可能
+  </div>
+</div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let stream=null,ctx=null,src=null,analyser=null,gain=null,raf=null;
+let correctedHistory=[],recent=[];
+
+function setupEnv(){
+  const ok=window.isSecureContext && navigator.mediaDevices?.getUserMedia;
+  $("env").textContent=ok?"✅ マイクを使える環境です。":"⚠️ SafariでHTTPSのURLとして開いてください。";
+}
+setupEnv();
+$("maxHz").oninput=e=>$("maxHzLabel").textContent=e.target.value;
+
+function autoCorrelate(buf,sr){
+  let rms=0; for(const x of buf)rms+=x*x;
+  rms=Math.sqrt(rms/buf.length);
+  if(rms<0.012)return -1;
+  let bestOff=-1,bestCorr=0;
+  const minOff=Math.floor(sr/600),maxOff=Math.floor(sr/55);
+  for(let off=minOff;off<=maxOff;off++){
+    let c=0;
+    for(let i=0;i<buf.length-off;i++) c+=buf[i]*buf[i+off];
+    c/=(buf.length-off);
+    if(c>bestCorr){bestCorr=c;bestOff=off}
+  }
+  return bestCorr>0.01 ? sr/bestOff : -1;
+}
+function median(a){
+  if(!a.length)return -1;
+  const b=[...a].sort((x,y)=>x-y);
+  return b[Math.floor(b.length/2)];
+}
+function octaveCorrect(raw){
+  if(raw<55||raw>600)return -1;
+  const stable=recent.length?median(recent.slice(-5)):raw;
+  const candidates=[raw,raw*2,raw/2,raw*3,raw/3].filter(x=>x>=55&&x<=600);
+  let best=raw,bestScore=Infinity;
+  for(const c of candidates){
+    const ratio=Math.abs(Math.log2(c/stable));
+    const jump=Math.abs(c-stable);
+    const score=ratio*120+jump*0.18;
+    if(score<bestScore){bestScore=score;best=c}
+  }
+  if(Math.abs(best-stable)>140&&recent.length>=3){
+    if(Math.abs(raw-stable)>=90) best=stable;
+  }
+  recent.push(best);
+  if(recent.length>7)recent.shift();
+  return median(recent.slice(-3));
+}
+function noteName(f){
+  if(f<=0)return "—";
+  const n=Math.round(12*Math.log2(f/440)+69);
+  const names=["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"];
+  return names[(n%12+12)%12]+(Math.floor(n/12)-1);
+}
+function zoneName(f){
+  if(f<85)return "低域";
+  if(f<145)return "男性域";
+  if(f<175)return "中間域";
+  if(f<275)return "女性会話域";
+  return "高めの女性域";
+}
+function drawChart(){
+  const cv=$("chart"),g=cv.getContext("2d");
+  const W=cv.width,H=cv.height,maxHz=+$("maxHz").value,minHz=50;
+  const y=hz=>H-(hz-minHz)/(maxHz-minHz)*H;
+  g.clearRect(0,0,W,H);
+  g.fillStyle="#b7dce9"; g.fillRect(0,y(145),W,y(85)-y(145));
+  g.fillStyle="#d8d8d8"; g.fillRect(0,y(175),W,y(145)-y(175));
+  g.fillStyle="#f6a6b3"; g.fillRect(0,y(275),W,y(175)-y(275));
+  g.strokeStyle="#8fa0aa";g.lineWidth=1;
+  g.fillStyle="#111";g.font="16px sans-serif";
+  for(let hz=50;hz<=maxHz;hz+=50){
+    const yy=y(hz);g.beginPath();g.moveTo(0,yy);g.lineTo(W,yy);g.stroke();g.fillText(hz+" Hz",8,yy-4);
+  }
+  g.fillText("男性域",W-100,y(120));
+  g.fillText("中間域",W-100,y(160));
+  g.fillText("女性会話域",W-130,y(235));
+  const arr=correctedHistory.slice(-140);
+  if(arr.length>1){
+    g.strokeStyle="red";g.lineWidth=4;g.beginPath();
+    arr.forEach((v,i)=>{const xx=i/139*W,yy=y(v);if(i===0)g.moveTo(xx,yy);else g.lineTo(xx,yy)});
+    g.stroke();
+    g.fillStyle="blue";
+    arr.forEach((v,i)=>{const xx=i/139*W,yy=y(v);g.beginPath();g.arc(xx,yy,4,0,Math.PI*2);g.fill()});
+  }
+}
+function loop(){
+  const buf=new Float32Array(analyser.fftSize);analyser.getFloatTimeDomainData(buf);
+  const raw=autoCorrelate(buf,ctx.sampleRate);
+  const corrected=raw>0?octaveCorrect(raw):-1;
+  if(raw>0)$("rawPitch").textContent=Math.round(raw)+" Hz";
+  if(corrected>0){
+    $("pitch").textContent=Math.round(corrected)+" Hz";
+    $("note").textContent=noteName(corrected);
+    $("zone").textContent=zoneName(corrected);
+    correctedHistory.push(corrected);
+    if(correctedHistory.length>300)correctedHistory.shift();
+    $("fixInfo").textContent=Math.abs(raw-corrected)>20
+      ?"🔧 補正中：生値 "+Math.round(raw)+" Hz → "+Math.round(corrected)+" Hz"
+      :"補正なし：安定して検出できています。";
+  }
+  drawChart();
+  raf=requestAnimationFrame(loop);
+}
+async function startMic(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    ctx=new (window.AudioContext||window.webkitAudioContext)(); await ctx.resume();
+    src=ctx.createMediaStreamSource(stream);
+    analyser=ctx.createAnalyser();analyser.fftSize=2048;
+    gain=ctx.createGain();gain.gain.value=0;
+    src.connect(analyser);src.connect(gain);gain.connect(ctx.destination);
+    recent=[];correctedHistory=[];
+    loop();$("start").disabled=true;$("stop").disabled=false;
+  }catch(e){
+    $("env").textContent="⚠️ マイクを開始できません。Safariのサイト設定でマイクを許可してね。";
+  }
+}
+$("start").onclick=startMic;
+$("stop").onclick=()=>{
+  if(raf)cancelAnimationFrame(raf);
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  if(ctx)ctx.close();
+  stream=ctx=src=analyser=gain=null;
+  $("start").disabled=false;$("stop").disabled=true;
+};
+$("monitor").onchange=e=>{if(gain)gain.gain.value=e.target.checked?0.8:0};
+</script>
+</body>
+</html>
